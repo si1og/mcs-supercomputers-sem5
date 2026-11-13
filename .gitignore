@@ -3,3 +3,12 @@ vms/
 materials/
 .DS_Store
 lab1/build/
+lab1/report/*.aux
+lab1/report/*.fdb_latexmk
+lab1/report/*.fls
+lab1/report/*.log
+lab1/report/missfont.log
+lab1/report/*.out
+lab1/report/*.synctex.gz
+lab1/report/*.toc
+lab1/report/_minted*/

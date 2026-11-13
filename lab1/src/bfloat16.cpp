@@ -66,7 +66,7 @@ BFloat16 BFloat16Converter::encode(double value) {
 }
 
 double BFloat16Converter::decode(const BFloat16& value) {
-    const double sign = value.sign ? -1.0 : 1.0;
+    const double sign = value.sign ? -1 : 1;
     const double fraction = mantissaToFraction(value.mantissa);
 
     if (value.exponent == 0) {
@@ -83,8 +83,8 @@ double BFloat16Converter::decode(const BFloat16& value) {
         return std::numeric_limits<double>::quiet_NaN();
     }
 
-    return sign * (1.0 + fraction)
-         * std::pow(2.0, static_cast<int>(value.exponent) - BIAS);
+    return sign * (1 + fraction)
+         * std::pow(2, static_cast<int>(value.exponent) - BIAS);
 }
 
 BFloat16 BFloat16Converter::fromBitString(std::string_view bits) {
