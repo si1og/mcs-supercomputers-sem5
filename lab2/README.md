@@ -1,5 +1,7 @@
 # Лабораторная работа №2: GlusterFS
 
+Краткая шпаргалка без теории: [COMMANDS.md](COMMANDS.md).
+
 ## 1. Текущая конфигурация стенда
 
 В лабораторной используются четыре виртуальные машины под управлением openSUSE Leap 16.0:
@@ -26,7 +28,7 @@ Trusted storage pool — объединение серверов GlusterFS. Уз
 Brick, или «кирпичик», — каталог на сервере, в котором физически хранятся данные GlusterFS. Brick записывается в формате `hostname:/path`, например:
 
 ```text
-server01:/bricks/rep/brick
+server01:/bricks/rep/repvol
 ```
 
 Brick является минимальной единицей хранения GlusterFS.
@@ -138,13 +140,13 @@ sudo mkfs.xfs -f -i size=512 /dev/vg_gluster/lv_rep
 ```bash
 sudo mkdir -p /bricks/rep
 sudo mount /dev/vg_gluster/lv_rep /bricks/rep
-sudo mkdir -p /bricks/rep/brick
+sudo mkdir -p /bricks/rep/repvol
 ```
 
 Здесь:
 
 - `/bricks/rep` — точка монтирования локальной XFS;
-- `/bricks/rep/brick` — каталог, который будет передан GlusterFS как brick.
+- `/bricks/rep/repvol` — каталог, который будет передан GlusterFS как brick тома `repvol`.
 
 Узнать UUID файловой системы:
 
@@ -169,7 +171,35 @@ df -h /bricks/rep
 
 ## 6. Настройка firewall
 
-Полностью отключать firewall не требуется. На `server01`, `server02` и `server03` открыть управляющие порты GlusterFS и диапазон портов brick:
+Полностью отключать firewall не требуется. Начиная с GlusterFS 10 порты brick выбираются случайно между `base-port` и `max-port` из `/etc/glusterfs/glusterd.vol`. Чтобы не открывать стандартный диапазон `49152–60999`, на всех трёх серверах следует явно задать одинаковый ограниченный диапазон и IPv4:
+
+```text
+volume management
+    ...
+    option transport.address-family inet
+    option base-port 49152
+    option max-port 49251
+end-volume
+```
+
+Явное `transport.address-family inet` обязательно для нашего стенда: пакет openSUSE по умолчанию пытался разрешать имена узлов через IPv6, из-за чего peers переходили в `Disconnected`, а в `glusterd.log` появлялось `DNS resolution failed` с `family=10`.
+
+После изменения `glusterd.vol` перезапустить `glusterd` на каждом сервере:
+
+```bash
+sudo systemctl restart glusterd
+```
+
+Если тома и brick-процессы уже запущены на старых случайных портах, том сначала следует остановить, после перезапуска `glusterd` снова запустить и проверить новые порты:
+
+```bash
+sudo gluster volume stop repvol
+# Перезапустить glusterd на server01, server02 и server03.
+sudo gluster volume start repvol
+sudo gluster volume status repvol
+```
+
+На `server01`, `server02` и `server03` открыть управляющие порты GlusterFS и тот же диапазон портов brick:
 
 ```bash
 sudo firewall-cmd --permanent --add-port=24007-24008/tcp
@@ -209,6 +239,14 @@ Peer in Cluster (Connected)
 
 `server01` не показывается как peer самому себе — это нормально.
 
+Проверку необходимо выполнить на каждом сервере. Если один сервер видит peers как `Connected`, это ещё не гарантирует согласованное состояние всего пула:
+
+```bash
+ssh server01 sudo gluster pool list
+ssh server02 sudo gluster pool list
+ssh server03 sudo gluster pool list
+```
+
 Удаление узла из пула выполняется командой:
 
 ```bash
@@ -223,9 +261,9 @@ sudo /usr/sbin/gluster peer detach <hostname>
 
 ```bash
 sudo /usr/sbin/gluster volume create repvol replica 3 \
-  server01:/bricks/rep/brick \
-  server02:/bricks/rep/brick \
-  server03:/bricks/rep/brick
+  server01:/bricks/rep/repvol \
+  server02:/bricks/rep/repvol \
+  server03:/bricks/rep/repvol
 ```
 
 Запустить том:
@@ -255,7 +293,7 @@ sudo mkdir -p /mnt/repvol
 
 ```bash
 sudo mount -t glusterfs \
-  -o backup-volfile-servers=server02:server03 \
+  -o xlator-option=transport.address-family=inet,backup-volfile-servers=server02:server03 \
   server01:/repvol /mnt/repvol
 ```
 
@@ -276,15 +314,15 @@ cat /mnt/repvol/test.txt
 Для автоматического монтирования добавить на клиенте в `/etc/fstab`:
 
 ```fstab
-server01:/repvol /mnt/repvol glusterfs defaults,_netdev,backup-volfile-servers=server02:server03 0 0
+server01:/repvol /mnt/repvol glusterfs defaults,_netdev,xlator-option=transport.address-family=inet,backup-volfile-servers=server02:server03 0 0
 ```
 
 Проверить наличие физической копии файла на серверах:
 
 ```bash
-ssh server01 sudo ls -la /bricks/rep/brick
-ssh server02 sudo ls -la /bricks/rep/brick
-ssh server03 sudo ls -la /bricks/rep/brick
+ssh server01 sudo ls -la /bricks/rep/repvol
+ssh server02 sudo ls -la /bricks/rep/repvol
+ssh server03 sudo ls -la /bricks/rep/repvol
 ```
 
 У `replica 3` файл должен находиться на всех трёх brick.
@@ -307,6 +345,16 @@ ssh server03 sudo ls -la /bricks/rep/brick
 
 Для каждого нового типа тома необходимо использовать отдельный thin LV, отдельную файловую систему и отдельный каталог brick. Один brick нельзя одновременно включать в несколько томов.
 
+В этой лабораторной используется единое соглашение: последний компонент пути brick совпадает с именем GlusterFS-тома и оканчивается на `vol`:
+
+```text
+repvol  → /bricks/rep/repvol
+distvol → /bricks/dist/distvol
+arbvol  → /bricks/arb/arbvol
+```
+
+Так по пути сразу видно, какому тому принадлежит каталог. Само имя каталога для GlusterFS технически может быть любым.
+
 Пример подготовки brick для distributed-тома на нужном сервере:
 
 ```bash
@@ -314,19 +362,19 @@ sudo lvcreate -V 3G -T vg_gluster/thinpool -n lv_dist
 sudo mkfs.xfs -f -i size=512 /dev/vg_gluster/lv_dist
 sudo mkdir -p /bricks/dist
 sudo mount /dev/vg_gluster/lv_dist /bricks/dist
-sudo mkdir -p /bricks/dist/brick
+sudo mkdir -p /bricks/dist/distvol
 ```
 
 Для этой файловой системы также необходимо добавить запись по UUID в `/etc/fstab`.
 
 ### Distributed
 
-Подготовить `/bricks/dist/brick` на `server01` и `server02`, затем выполнить:
+Подготовить `/bricks/dist/distvol` на `server01` и `server02`, затем выполнить:
 
 ```bash
 sudo gluster volume create distvol \
-  server01:/bricks/dist/brick \
-  server02:/bricks/dist/brick
+  server01:/bricks/dist/distvol \
+  server02:/bricks/dist/distvol
 
 sudo gluster volume start distvol
 ```
@@ -337,22 +385,22 @@ sudo gluster volume start distvol
 
 ```bash
 sudo gluster volume create repvol replica 3 \
-  server01:/bricks/rep/brick \
-  server02:/bricks/rep/brick \
-  server03:/bricks/rep/brick
+  server01:/bricks/rep/repvol \
+  server02:/bricks/rep/repvol \
+  server03:/bricks/rep/repvol
 
 sudo gluster volume start repvol
 ```
 
 ### Replica с арбитром
 
-Подготовить отдельный `/bricks/arb/brick` на всех трёх серверах:
+Подготовить отдельный `/bricks/arb/arbvol` на всех трёх серверах:
 
 ```bash
 sudo gluster volume create arbvol replica 3 arbiter 1 \
-  server01:/bricks/arb/brick \
-  server02:/bricks/arb/brick \
-  server03:/bricks/arb/brick
+  server01:/bricks/arb/arbvol \
+  server02:/bricks/arb/arbvol \
+  server03:/bricks/arb/arbvol
 
 sudo gluster volume start arbvol
 ```
@@ -367,7 +415,7 @@ sudo gluster volume start arbvol
 
 ```bash
 sudo gluster volume add-brick distvol \
-  server03:/bricks/dist/brick
+  server03:/bricks/dist/distvol
 ```
 
 Запустить перераспределение данных:
@@ -387,26 +435,39 @@ sudo gluster volume rebalance distvol status
 
 ```bash
 sudo gluster volume remove-brick distvol \
-  server03:/bricks/dist/brick start
+  server03:/bricks/dist/distvol start
 ```
 
 Проверить перенос данных:
 
 ```bash
 sudo gluster volume remove-brick distvol \
-  server03:/bricks/dist/brick status
+  server03:/bricks/dist/distvol status
 ```
 
 После успешного завершения миграции подтвердить удаление:
 
 ```bash
 sudo gluster volume remove-brick distvol \
-  server03:/bricks/dist/brick commit
+  server03:/bricks/dist/distvol commit
 ```
 
 Нельзя выполнять `commit`, пока перенос данных не завершился успешно.
 
 ## 14. Heal
+
+Проверить, запущены ли self-heal daemon на всех серверах:
+
+```bash
+sudo gluster volume status repvol
+sudo gluster volume get repvol cluster.self-heal-daemon
+```
+
+Если self-heal выключен, включить его явно:
+
+```bash
+sudo gluster volume set repvol cluster.self-heal-daemon enable
+```
 
 Проверить состояние реплик:
 
@@ -531,7 +592,7 @@ sudo gluster volume delete repvol
 
 ## 19. Важные предостережения
 
-- Не записывать пользовательские файлы напрямую в `/bricks/.../brick`. Работать следует через клиентское монтирование.
+- Не записывать пользовательские файлы напрямую в `/bricks/.../<volume-name>`. Работать следует через клиентское монтирование.
 - Не удалять физические файлы из brick при обычной работе.
 - Не использовать корневую файловую систему как brick, если доступен отдельный диск.
 - Не использовать один brick в нескольких томах.
@@ -673,9 +734,9 @@ sudo gluster volume status distvol detail
 Например:
 
 ```text
-file1.dat → server02:/bricks/dist/brick
-file2.dat → server01:/bricks/dist/brick
-file3.dat → server03:/bricks/dist/brick
+file1.dat → server02:/bricks/dist/distvol
+file2.dat → server01:/bricks/dist/distvol
+file3.dat → server03:/bricks/dist/distvol
 ```
 
 Один файл не разбивается на части между brick. Разные файлы распределяются между серверами. Поэтому ёмкости brick складываются, но резервной копии файла нет: при недоступности brick размещённые на нём файлы также становятся недоступны.
@@ -762,9 +823,9 @@ ls -lh /mnt/distvol
 Затем на серверах проверяется физическое содержимое brick:
 
 ```bash
-ssh server01 sudo find /bricks/dist/brick -maxdepth 1 -type f -ls
-ssh server02 sudo find /bricks/dist/brick -maxdepth 1 -type f -ls
-ssh server03 sudo find /bricks/dist/brick -maxdepth 1 -type f -ls
+ssh server01 sudo find /bricks/dist/distvol -maxdepth 1 -type f -ls
+ssh server02 sudo find /bricks/dist/distvol -maxdepth 1 -type f -ls
+ssh server03 sudo find /bricks/dist/distvol -maxdepth 1 -type f -ls
 ```
 
 Для distributed-тома каждый файл должен физически находиться на одном из brick. Служебный каталог `.glusterfs` в выводе не является пользовательским файлом.
@@ -866,7 +927,9 @@ sudo gluster volume start repvol
 Снова смонтировать том на клиенте:
 
 ```bash
-sudo mount -t glusterfs server01:/repvol /mnt/repvol
+sudo mount -t glusterfs \
+  -o xlator-option=transport.address-family=inet \
+  server01:/repvol /mnt/repvol
 cat /mnt/repvol/document.txt
 ls -la /mnt/repvol
 ```
@@ -927,9 +990,9 @@ dd if=/dev/urandom of=/mnt/distvol/test-5m.bin bs=1M count=5
 dd if=/dev/urandom of=/mnt/distvol/test-10m.bin bs=1M count=10
 
 # 5. Посмотреть их физическое размещение на серверах
-ssh server01 sudo find /bricks/dist/brick -maxdepth 1 -type f -ls
-ssh server02 sudo find /bricks/dist/brick -maxdepth 1 -type f -ls
-ssh server03 sudo find /bricks/dist/brick -maxdepth 1 -type f -ls
+ssh server01 sudo find /bricks/dist/distvol -maxdepth 1 -type f -ls
+ssh server02 sudo find /bricks/dist/distvol -maxdepth 1 -type f -ls
+ssh server03 sudo find /bricks/dist/distvol -maxdepth 1 -type f -ls
 
 # 6. Показать квоты
 sudo gluster volume quota repvol list
