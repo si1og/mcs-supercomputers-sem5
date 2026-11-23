@@ -1,0 +1,6 @@
+name: lab3-cache
+channels:
+  - defaults
+dependencies:
+  - python=3.13
+  - matplotlib-base
