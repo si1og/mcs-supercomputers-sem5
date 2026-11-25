@@ -1,0 +1,3 @@
+# Cache sudo authentication for this lab user for 60 minutes.
+# Keep the default per-terminal timestamp scope and password prompt timeout.
+Defaults:ilyasemenov timestamp_timeout=60

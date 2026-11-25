@@ -76,6 +76,8 @@ ls -ld /bricks/rep/repvol
 
 ## Настройка glusterd
 
+Зависимости запуска от сети и XFS: [deploy/boot-order](deploy/boot-order/README.md).
+
 В `/etc/glusterfs/glusterd.vol` на всех серверах:
 
 ```text
@@ -189,7 +191,7 @@ mount | grep gluster
 Автоматическое монтирование на клиенте:
 
 ```fstab
-server01:/repvol /mnt/repvol glusterfs defaults,_netdev,xlator-option=transport.address-family=inet,backup-volfile-servers=server02:server03 0 0
+server01:/repvol /mnt/repvol glusterfs defaults,_netdev,nofail,x-systemd.mount-timeout=90s,xlator-option=transport.address-family=inet,backup-volfile-servers=server02:server03 0 0
 ```
 
 Размонтировать:
@@ -221,6 +223,8 @@ ssh server03 sudo find /bricks/rep/repvol -maxdepth 1 -type f -ls
 ```
 
 ## Self-heal
+
+Постоянное исправление IPv6/IPv4 для пакета openSUSE: [установка и диагностика](deploy/self-heal-ipv4/README.md).
 
 ```bash
 sudo gluster volume get repvol cluster.self-heal-daemon

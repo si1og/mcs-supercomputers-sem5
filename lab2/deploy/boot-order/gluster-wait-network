@@ -1,0 +1,38 @@
+#!/bin/bash
+set -euo pipefail
+export LC_ALL=C
+
+case "$(hostname -s)" in
+    server01) task_address=192.168.100.11 ;;
+    server02) task_address=192.168.100.12 ;;
+    server03) task_address=192.168.100.13 ;;
+    *) echo 'Unknown Gluster server hostname' >&2; exit 1 ;;
+esac
+
+task_ready() {
+    /usr/sbin/ip -4 -o address show dev enp0s9 scope global |
+        awk -v address="$task_address/24" '$4 == address {found=1} END {exit !found}' || return 1
+
+    for task_peer in 192.168.100.11 192.168.100.12 192.168.100.13; do
+        [ "$task_peer" = "$task_address" ] && continue
+        /usr/sbin/ip -4 route get "$task_peer" |
+            awk -v address="$task_address" '
+                { for (i=1; i<NF; i++) {
+                    if ($i == "dev" && $(i+1) == "enp0s9") device_ok=1
+                    if ($i == "src" && $(i+1) == address) source_ok=1
+                } }
+                END {exit !(device_ok && source_ok)}' || return 1
+    done
+}
+
+# Wait for local addresses/routes only. Other servers may be powered off.
+task_attempt=0
+until task_ready; do
+    if [ "$task_attempt" -ge 90 ]; then
+        echo "Gluster network unavailable: expected $task_address/24 on enp0s9 and matching peer routes" >&2
+        exit 1
+    fi
+    task_attempt=$((task_attempt + 1))
+    sleep 1
+done
+echo "Gluster network ready: enp0s9 source $task_address"

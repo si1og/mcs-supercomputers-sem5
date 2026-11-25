@@ -1,0 +1,1 @@
+server01:/repvol /mnt/repvol glusterfs defaults,_netdev,nofail,x-systemd.mount-timeout=90s,xlator-option=transport.address-family=inet,backup-volfile-servers=server02:server03 0 0

@@ -1,0 +1,9 @@
+[Unit]
+Description=Forward Gluster loopback connections to IPv4
+Requires=gluster-loopback.socket
+After=gluster-loopback.socket
+
+[Service]
+Type=notify
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd 127.0.0.1:24007
+Restart=on-failure

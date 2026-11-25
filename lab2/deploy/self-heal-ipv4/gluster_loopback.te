@@ -1,0 +1,19 @@
+module gluster_loopback 1.1;
+
+require {
+    type systemd_socket_proxyd_t;
+    type gluster_port_t;
+    type nsfs_t;
+    type kernel_t;
+    class tcp_socket { name_bind name_connect };
+    class file getattr;
+    class unix_dgram_socket sendto;
+}
+
+# systemd-socket-proxyd forwards ::1:24007 to 127.0.0.1:24007.
+# Keep SELinux enforcing and preserve the existing Gluster port label.
+allow systemd_socket_proxyd_t gluster_port_t:tcp_socket { name_bind name_connect };
+
+# Namespace inspection and READY=1 notification to PID 1 on this openSUSE host.
+allow systemd_socket_proxyd_t nsfs_t:file getattr;
+allow systemd_socket_proxyd_t kernel_t:unix_dgram_socket sendto;

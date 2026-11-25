@@ -217,6 +217,8 @@ sudo firewall-cmd --list-ports
 
 ## 7. Создание trusted storage pool
 
+На нашем стенде также настроено ожидание внутреннего IPv4 и монтирования brick до запуска `glusterd`. Это предотвращает ранний старт с NAT-адресом после перезагрузки. Исходники и проверка: [порядок запуска](deploy/boot-order/README.md). При добавлении файловых систем новых томов их точки монтирования следует добавить в `RequiresMountsFor`.
+
 На `server01` добавить остальные серверы:
 
 ```bash
@@ -314,7 +316,7 @@ cat /mnt/repvol/test.txt
 Для автоматического монтирования добавить на клиенте в `/etc/fstab`:
 
 ```fstab
-server01:/repvol /mnt/repvol glusterfs defaults,_netdev,xlator-option=transport.address-family=inet,backup-volfile-servers=server02:server03 0 0
+server01:/repvol /mnt/repvol glusterfs defaults,_netdev,nofail,x-systemd.mount-timeout=90s,xlator-option=transport.address-family=inet,backup-volfile-servers=server02:server03 0 0
 ```
 
 Проверить наличие физической копии файла на серверах:
@@ -455,6 +457,8 @@ sudo gluster volume remove-brick distvol \
 Нельзя выполнять `commit`, пока перенос данных не завершился успешно.
 
 ## 14. Heal
+
+Для openSUSE GlusterFS 11.1 на наших трёх серверах установлен постоянный локальный мост `[::1]:24007 → 127.0.0.1:24007`: self-heal первоначально выбирал IPv6 и завершался, поскольку `glusterd` слушает IPv4. Исходники systemd-настроек, SELinux-правило и установщик находятся в [deploy/self-heal-ipv4](deploy/self-heal-ipv4/README.md). Настройка общая для всех томов, self-heal запускает сам `glusterd`.
 
 Проверить, запущены ли self-heal daemon на всех серверах:
 
