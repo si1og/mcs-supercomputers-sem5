@@ -23,11 +23,15 @@ case "$line_bytes" in
 esac
 
 started_at=$(date +%s)
-ssh -T -o ConnectTimeout=120 acer '
+COPYFILE_DISABLE=1 tar -cf - -C "$script_dir" cache.c measurements/benchmark.h \
+    measurements/{benchmark,page_size,line_stride,working_set,l1_associativity}.c |
+    ssh -T -o ConnectTimeout=120 acer '
     set -eu
     work_dir=$(mktemp -d)
     trap '\''rm -rf -- "$work_dir"'\'' EXIT
-    cc -std=c11 -O2 -x c -o "$work_dir/cache" -
-    "$work_dir/cache"' "$line_bytes" < "$script_dir/cache.c" |
+    cd "$work_dir"
+    tar -xf -
+    cc -std=c11 -O2 -o cache cache.c measurements/*.c
+    ./cache' "$line_bytes" |
     CACHE_STARTED_AT="$started_at" \
     "$conda" run --no-capture-output -n lab3-cache python "$script_dir/plot-cache.py"
