@@ -15,17 +15,22 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
-from matplotlib.ticker import MultipleLocator
+from matplotlib.ticker import MultipleLocator, StrMethodFormatter
 
 plt.rcParams["pdf.fonttype"] = 42
 SCRIPT_MTIME = Path(__file__).stat().st_mtime_ns
 
 
-def plot(title, x_label, series, *, log_scale=False, ticks=None):
+def plot(title, x_label, series, *, log_scale=False, ticks=None, show_values=False):
     fig, ax = plt.subplots(figsize=(8, 4.5), layout="constrained")
     for label, points in series:
         x, latency = zip(*sorted(points))
         ax.plot(x, latency, ".-", label=label)
+        if show_values:
+            for step, value in zip(x, latency):
+                ax.annotate(f"{value:.1f}".replace(".", ","), (step, value),
+                            xytext=(0, 12), textcoords="offset points", ha="center", fontsize=9)
+            ax.margins(y=0.12)
 
     if log_scale:
         ax.set_xscale("log", base=2)
@@ -53,14 +58,6 @@ def plot_page_probe(samples):
     ax.vlines(starts, 0, 1, transform=ax.get_xaxis_transform(), colors=accent,
               linestyles="dashed", linewidth=0.8, alpha=0.38, zorder=1)
     ax.scatter(starts, start_times, s=27, color=accent, label="Начало страницы", zorder=3)
-
-    # Стрелка отмечает интервал между двумя соседними границами.
-    left, right = starts[1:3]
-    coords = ax.get_xaxis_transform()
-    ax.annotate("", xy=(right, 0.84), xytext=(left, 0.84), xycoords=coords,
-                arrowprops={"arrowstyle": "<->", "color": accent})
-    ax.text((left + right) / 2, 0.87, f"{page_kib:g} КиБ", transform=coords,
-            ha="center", va="bottom", color=accent)
 
     ax.set(title=f"Размер страницы по замеру ({page_kib:g} КиБ)",
            xlabel="Смещение от начала участка, КиБ", ylabel="Медиана времени записи, мкс")
@@ -105,21 +102,23 @@ def read_csv(csv_data):
 
 
 def figures(data):
-    if page_samples := data.get("page_first_write_bytes"):
-        yield "page_size.png", plot_page_probe(page_samples)
-
     strides = sorted(x for x, _ in data["line_stride_bytes"])
     yield "line_stride.png", plot(
         "Задержка и шаг чтения", "Шаг чтения, байт",
         [(None, data["line_stride_bytes"])], log_scale=True,
-        ticks=(strides, [str(x) for x in strides]),
+        ticks=(strides, [str(x) for x in strides]), show_values=True,
     )
 
+    if page_samples := data.get("page_first_write_bytes"):
+        yield "page_size.png", plot_page_probe(page_samples)
+
     sizes_kib = [(x / 1024, latency) for x, latency in data["working_set_bytes"]]
-    yield "working_set.png", plot(
+    working_set = plot(
         "Задержка и размер рабочего набора", "Размер рабочего набора, КиБ",
         [(None, sizes_kib)], log_scale=True,
     )
+    working_set.axes[0].xaxis.set_major_formatter(StrMethodFormatter("{x:g}"))
+    yield "working_set.png", working_set
 
     yield "l1_associativity.png", plot(
         "Ассоциативность L1", "Число кэш-линий", [

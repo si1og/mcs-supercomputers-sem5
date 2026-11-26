@@ -2,7 +2,7 @@
 
 void measure_working_set(unsigned char *buffer, size_t *order, size_t line_bytes)
 {
-    /* Четыре точки между соседними степенями двойки, начиная с 4 КиБ. */
+    // меняем рабочий набор по степеням двойки + 4 соседним точкам между ними
     for (size_t base = 4 * KIB; base < MAX_BYTES; base *= 2) {
         for (size_t part = 0; part < 4; ++part) {
             size_t size = base + part * (base / 4);

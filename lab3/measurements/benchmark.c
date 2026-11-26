@@ -66,6 +66,8 @@ size_t build_ring(unsigned char *buffer, size_t *order,
     return order[0] * block_bytes;
 }
 
+// читаем память из буффера с различными смещениями
+// используем для замера чтения
 static void walk(const unsigned char *buffer, size_t offset, size_t reads)
 {
     for (size_t i = 0; i < reads; ++i) {
@@ -74,6 +76,9 @@ static void walk(const unsigned char *buffer, size_t offset, size_t reads)
     last_offset = offset;
 }
 
+// a < b: -1
+// a == b: 0
+// a > b: 1
 static int compare_ns(const void *left, const void *right)
 {
     double a = *(const double *)left;
@@ -81,6 +86,7 @@ static int compare_ns(const void *left, const void *right)
     return (a > b) - (a < b);
 }
 
+// считаем медианное время по замерам
 double median_ns(const double samples[RUN_COUNT])
 {
     double sorted[RUN_COUNT];

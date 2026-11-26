@@ -7,9 +7,9 @@
 #include <sys/mman.h>
 
 enum {
-    PAGE_PROBE_BYTES = MIB,
-    PAGE_PROBE_STEP = 64,
-    PAGE_PROBE_POINTS = PAGE_PROBE_BYTES / PAGE_PROBE_STEP,
+    PAGE_PROBE_BYTES = MIB, // размер участка памяти для замера
+    PAGE_PROBE_STEP = 64, // определили в предыдущем пункте, считаем константой (размер кэш-линии)
+    PAGE_PROBE_POINTS = PAGE_PROBE_BYTES / PAGE_PROBE_STEP, // соответственно размечаем участок памяти по кэш-линиям
 };
 
 static size_t find_page_period(const double medians[PAGE_PROBE_POINTS])
@@ -18,7 +18,7 @@ static size_t find_page_period(const double medians[PAGE_PROBE_POINTS])
         size_t groups = PAGE_PROBE_POINTS / period;
         size_t peaks = 0;
 
-        // Сравниваем начало и середину каждой предполагаемой страницы.
+        // сравниваем начало и середину каждой предполагаемой страницы
         for (size_t point = 0; point < PAGE_PROBE_POINTS; point += period) {
             if (medians[point] > 1.5 * medians[point + period / 2]) {
                 ++peaks;
@@ -33,31 +33,33 @@ static size_t find_page_period(const double medians[PAGE_PROBE_POINTS])
 
 size_t measure_page_bytes(void)
 {
-    double (*samples)[RUN_COUNT] = malloc(PAGE_PROBE_POINTS * sizeof(*samples));
+    // RUN_COUNT - число повторов для теста, берём 5 прогонов
+    double (*samples)[RUN_COUNT] = malloc(PAGE_PROBE_POINTS * sizeof(*samples)); // выделяем память под замеры бенчмарка
+
     if (samples == NULL) {
         perror("Замер размера страницы: malloc");
         exit(EXIT_FAILURE);
     }
 
     for (size_t run = 0; run < RUN_COUNT; ++run) {
-        void *mapping = mmap(NULL, PAGE_PROBE_BYTES, PROT_READ | PROT_WRITE,
-                             MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        void *mapping = mmap(
+                NULL, PAGE_PROBE_BYTES, PROT_READ | PROT_WRITE,
+                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0
+        );
+
         if (mapping == MAP_FAILED) {
             perror("Замер размера страницы: mmap");
             exit(EXIT_FAILURE);
         }
-#ifdef MADV_NOHUGEPAGE
-        if (madvise(mapping, PAGE_PROBE_BYTES, MADV_NOHUGEPAGE) != 0) {
-            perror("Замер размера страницы: madvise");
-            exit(EXIT_FAILURE);
-        }
-#endif
+
         volatile unsigned char *probe = mapping;
+
         for (size_t point = 0; point < PAGE_PROBE_POINTS; ++point) {
             double begin = now_ns();
-            probe[point * PAGE_PROBE_STEP] = 1;
+            probe[point * PAGE_PROBE_STEP] = 1; // пишем в память знаячение 1
             samples[point][run] = now_ns() - begin;
         }
+
         if (munmap(mapping, PAGE_PROBE_BYTES) != 0) {
             perror("Замер размера страницы: munmap");
             exit(EXIT_FAILURE);
@@ -68,6 +70,7 @@ size_t measure_page_bytes(void)
     for (size_t point = 0; point < PAGE_PROBE_POINTS; ++point) {
         medians[point] = median_ns(samples[point]);
     }
+
     size_t page_bytes = find_page_period(medians);
     if (page_bytes == 0) {
         fprintf(stderr, "Не удалось найти период пиков первой записи.\n");
