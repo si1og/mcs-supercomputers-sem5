@@ -7,7 +7,7 @@ void measure_working_set(unsigned char *buffer, size_t *order, size_t line_bytes
         for (size_t part = 0; part < 4; ++part) {
             size_t size = base + part * (base / 4);
             size_t start = build_ring(buffer, order, size, line_bytes, line_bytes);
-            measure("working_set_bytes", size, buffer, start, size / line_bytes);
+            measure("working_set_bytes", size, buffer, start, size / (line_bytes * 8));
         }
     }
     size_t start = build_ring(buffer, order, MAX_BYTES, line_bytes, line_bytes);
